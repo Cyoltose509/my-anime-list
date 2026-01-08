@@ -10,3 +10,5 @@ private/
 .replit
 replit.nix
 .idea
+
+/content/templater/dashboard.md
