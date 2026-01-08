@@ -1,0 +1,18 @@
+filters:
+  and:
+    - file.folder == "番剧大全"
+formulas:
+  未命名: tags
+  priority_score: if(file.hasTag("#夯"), 1, if(file.hasTag("#顶级"), 2, if(file.hasTag("#人上人"), 3, if(file.hasTag("#NPC"), 4, if(file.hasTag("#拉完了"), 5,6)))))
+views:
+  - type: table
+    name: 表格
+    groupBy:
+      property: formula.priority_score
+      direction: ASC
+    order:
+      - file.name
+      - file.tags
+    sort:
+      - property: file.fullname
+        direction: ASC
