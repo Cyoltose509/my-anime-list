@@ -4,6 +4,10 @@ tags:
   - 战斗
   - 血腥
   - 中道崩殂
+source: https://zh.wikipedia.org/wiki/GACHIAKUTA
+aliases:
+  - 废渊战鬼
+  - ガチアクタ
 ---
 我感觉一般般，因为男主同样犯下了愚蠢之罪，谁说话都不听，鲁莽得要死，个人不太喜欢
 没怎么看
