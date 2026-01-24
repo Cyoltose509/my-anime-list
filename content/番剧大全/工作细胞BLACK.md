@@ -1,7 +1,7 @@
 ---
 tags:
-  - 评级：顶级
-  - 观看状态：中道崩殂
+  - 评级-顶级
+  - 观看状态-中道崩殂
   - 战斗
   - 奇幻
 source: https://zh.wikipedia.org/wiki/%E5%B7%A5%E4%BD%9C%E7%B4%B0%E8%83%9EBLACK

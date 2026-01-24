@@ -1,9 +1,9 @@
 ---
 tags:
-  - 评级：人上人
+  - 评级-人上人
   - 战斗
   - 血腥
-  - 观看状态：中道崩殂
+  - 观看状态-中道崩殂
 source: https://zh.wikipedia.org/wiki/GACHIAKUTA
 aliases:
   - 废渊战鬼
