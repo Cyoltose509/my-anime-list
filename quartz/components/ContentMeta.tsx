@@ -62,19 +62,25 @@ export default ((opts?: Partial<ContentMetaOptions>) => {
                 rel="noopener noreferrer"
                 class="source-link"  // 可以加 CSS 美化
               >
-                原文链接
+                百科链接
               </a>
+            )
+            segments.push(
+              <span>
+              {display}
+            </span>
             )
           } else {
             // 其他字段直接显示值（字符串/数组简单 toString）
             display = typeof value === "string" ? value : JSON.stringify(value)
-          }
-
-          segments.push(
-            <span>
+            segments.push(
+              <span>
               {field}: {display}
             </span>
-          )
+            )
+          }
+
+
         }
       }
     }
