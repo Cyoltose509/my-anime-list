@@ -1,7 +1,7 @@
 ---
 tags:
-  - 人上人
-  - 中道崩殂
+  - 评级：人上人
+  - 观看状态：中道崩殂
   - 日常
   - 恋爱
 source: https://baike.baidu.com/item/Let's%20Play%20%E5%85%85%E6%BB%A1%E6%8C%91%E6%88%98%E7%9A%84%E4%BA%BA%E7%94%9F
