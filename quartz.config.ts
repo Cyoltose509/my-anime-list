@@ -15,7 +15,7 @@ const config: QuartzConfig = {
     analytics: {
       provider: "plausible",
     },
-    locale: "en-US",
+    locale: "zh-CN",
     baseUrl: "cyoltose509.github.io/my-anime-list",
     ignorePatterns: ["private", "templates", ".obsidian"],
     defaultDateType: "modified",
