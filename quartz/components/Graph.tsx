@@ -52,7 +52,7 @@ const defaultOptions: GraphOptions = {
     linkDistance: 50,
     fontSize: 0.6,
     opacityScale: 0.5,
-    showTags: true,
+    showTags: false,
     removeTags: [],
     focusOnHover: true,
     enableRadial: true,
