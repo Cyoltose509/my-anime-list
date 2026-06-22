@@ -1,0 +1,16 @@
+views:
+  - type: table
+    name: 表格
+    filters:
+      and:
+        - file.tags.contains("搞笑")
+    order:
+      - file.name
+      - tags
+    sort:
+      - property: file.name
+        direction: ASC
+      - property: tags
+        direction: ASC
+    columnSize:
+      file.name: 454
