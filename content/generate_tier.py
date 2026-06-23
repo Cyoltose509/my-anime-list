@@ -23,17 +23,12 @@ import re
 import sys
 import json
 import time
-import hashlib
 import argparse
 import textwrap
 import urllib.parse
 import urllib.request
 
-try:
-    import cloudscraper
-    _HAS_CLOUDSCRAPER = True
-except ImportError:
-    _HAS_CLOUDSCRAPER = False
+import cloudscraper
 
 def anibk_get_cover(page_url, flog, strict_portrait=True):
     """
@@ -41,11 +36,7 @@ def anibk_get_cover(page_url, flog, strict_portrait=True):
     封面图是页面里第一个 bgmbk.tv 的 webp 图片。
     返回 (img_bytes, method) 或 (None, None)。
     """
-    if not _HAS_CLOUDSCRAPER:
-        flog.add("  ⚠ anibk: cloudscraper 未安装，跳过", "yellow")
-        return None, None
     try:
-        import cloudscraper
         scraper = cloudscraper.create_scraper()
         resp = scraper.get(page_url, timeout=20)
         if resp.status_code != 200:
@@ -92,64 +83,217 @@ def anibk_get_cover(page_url, flog, strict_portrait=True):
         return None, None
 
 
-def anibk_search_by_title(title, flog):
+def _extract_season_num(cand_title):
+    """从候选标题提取季数：越小越优先（0=无季数标识/本体）"""
+    # 中文"第X季"
+    m = re.search(r"第\s*([\d一二三四五六七八九十]+)\s*季", cand_title)
+    if m:
+        map_cn = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+        s = m.group(1)
+        return map_cn.get(s) or int(s) if s.isdigit() else 99
+    # 英文 Season X / S1 / S2
+    m = re.search(r"[Ss]eason\s*(\d+)", cand_title)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"\bS(\d{1,2})\b", cand_title)
+    if m:
+        return int(m.group(1))
+    # 日语 第X期
+    m = re.search(r"第\s*(\d+)\s*期", cand_title)
+    if m:
+        return int(m.group(1))
+    # 带"(202X)"年份的视为新季
+    m = re.search(r"\((\d{4})\)", cand_title)
+    if m:
+        return int(m.group(1)) - 2000  # 年份映射为相对值，季数越小优先
+    return 0  # 无标识 = 本体/第一季
+
+
+def _sort_candidates_by_season(candidates):
+    """按季数升序排列（S1优先），同季保持原序"""
+    decorated = [(c, _extract_season_num(c["title"])) for c in candidates]
+    decorated.sort(key=lambda x: (x[1], x[0].get("_orig_idx", 99)))
+    return [c for c, _ in decorated]
+
+
+def anibk_search_by_title(title, tags, desc, deepseek_key, flog):
     """
-    用标题在 anibk.com 搜索封面。
-    尝试 /api/bk/list?keyword= 接口；若失败则遍历前200个ID的详情页。
+    直接搜索 anibk.com 找到番剧封面（与官网搜索完全一致）。
+    若多个候选则调用 DeepSeek 根据用户标签/描述挑选（优先第一季）。
     返回 (img_bytes, method) 或 (None, None)。
     """
-    if not _HAS_CLOUDSCRAPER:
-        return None, None
-    try:
-        import cloudscraper
-        scraper = cloudscraper.create_scraper()
-        encoded = urllib.parse.quote(title)
-        # 尝试搜索接口
-        for api_path in [
-            f"/api/bk/list?keyword={encoded}",
-            f"/api/search?keyword={encoded}",
-        ]:
-            url = f"https://www.anibk.com{api_path}"
-            try:
-                resp = scraper.get(url, timeout=12)
-                if resp.status_code == 200:
-                    j = json.loads(resp.text)
-                    items = []
-                    if isinstance(j, dict):
-                        items = j.get("data") or j.get("list") or j.get("results") or []
-                    elif isinstance(j, list):
-                        items = j
-                    for item in items[:3]:
-                        aid = str(item.get("id") or item.get("bk_id") or "")
-                        if not aid:
-                            continue
-                        detail_url = f"https://www.anibk.com/bk/{aid}"
-                        time.sleep(0.4)
-                        ibytes, imethod = anibk_get_cover(detail_url, FetchLog(), strict_portrait=True)
-                        if ibytes:
-                            return ibytes, f"anibk_search:{detail_url}"
-            except Exception:
-                pass
+    scraper = cloudscraper.create_scraper()
 
-        # 接口方式失败 → 尝试用标题直接拼详情页 URL（常见动漫有固定ID）
-        # 此处仅做轻量尝试：用标题在 anibk 搜索页提取第一条结果
-        search_url = f"https://www.anibk.com/bk/search?q={encoded}"
+    try:
+        # 直接调用 anibk.com 官网搜索（与用户浏览器搜索一致）
+        from urllib.parse import quote
+        search_url = f"https://www.anibk.com/list/---------?order=20&kw={quote(title)}"
+        flog.add(f"anibk 搜索: {search_url}", "dim")
+        resp = scraper.get(search_url, timeout=20)
+        if resp.status_code != 200:
+            flog.add(f"  HTTP {resp.status_code}", "dim")
+            return None, None
+
+        html = resp.text
+        # 解析搜索结果：<a title="番名" href="/bk/ID">
+        matches = re.findall(r'<a[^>]*title="([^"]+)"[^>]*href="/bk/(\d+)"', html)
+
+        candidates = []
+        seen_ids = set()
+        for cand_title, bk_id in matches:
+            cand_title = cand_title.strip()
+            if bk_id in seen_ids:
+                continue
+            seen_ids.add(bk_id)
+            candidates.append({
+                "id": bk_id,
+                "title": cand_title,
+                "desc": "",
+                "url": f"https://www.anibk.com/bk/{bk_id}",
+            })
+
+        if not candidates:
+            flog.add(f"anibk \u300c{title}\u300d\u2192 0 结果", "dim")
+            return None, None
+
+        flog.add(f"  \u2192 {len(candidates)} 结果", "dim")
+
+        # 按季数排序（S1 优先）
+        candidates = _sort_candidates_by_season(candidates)
+        flog.add(f"anibk \u2192 {len(candidates)} 个候选（S1优先）: {[c['title'] for c in candidates[:5]]}", "dim")
+
+        # 挑选最佳候选
+        chosen = None
+        if len(candidates) == 1:
+            chosen = candidates[0]
+        else:
+            # 名字完全匹配的候选直接选，无需 DeepSeek
+            exact_matches = []
+            seen_ids = set()
+            for c in candidates:
+                ct = c["title"]
+                if ct == title or ct in title or title in ct:
+                    if c["id"] not in seen_ids:
+                        seen_ids.add(c["id"])
+                        exact_matches.append(c)
+            if len(exact_matches) == 1:
+                flog.add(f"  \u2192 名字精确匹配\u300c{exact_matches[0]['title']}\u300d，直接选用", "dim")
+                chosen = exact_matches[0]
+            elif len(exact_matches) > 1:
+                flog.add(f"  \u2192 多个名字精确匹配\u300c{exact_matches[0]['title']}\u300d，选 S1", "dim")
+                chosen = exact_matches[0]
+            else:
+                flog.add(f"  \u2192 多个候选，调 DeepSeek 比对标签/描述（优先第一季）...", "dim")
+                chosen = _anibk_pick_best(candidates, title, tags, desc, deepseek_key, flog)
+
+        if not chosen:
+            return None, None
+
+        # 获取封面
+        detail_url = f"https://www.anibk.com/bk/{chosen['id']}"
+        flog.add(f"  \u2192 选\u300c{chosen['title']}\u300d({detail_url})", "dim")
+
+        resp = scraper.get(detail_url, timeout=20)
+        if resp.status_code != 200:
+            flog.add(f"  \u2192 HTTP {resp.status_code}", "dim")
+            return None, None
+
+        html = resp.text
+        imgs = re.findall(
+            r"https?://imgcn\d?\.bgmbk\.tv/file/bk/\d+/[a-f0-9]{20,}\.webp",
+            html
+        )
+        if not imgs:
+            flog.add(f"  \u2192 页面无封面图", "dim")
+            return None, None
+
+        img_url = imgs[0]
+        img_data = scraper.get(img_url, timeout=15).content
+        if not img_data or len(img_data) < 500:
+            flog.add(f"  \u2192 封面下载失败", "dim")
+            return None, None
+
+        if not is_portrait_image(img_data):
+            flog.add(f"  \u2192 封面为横版", "dim")
+            return None, None
+
+        # webp \u2192 JPEG
+        from PIL import Image
+        from io import BytesIO
         try:
-            resp = scraper.get(search_url, timeout=15)
-            # 在返回 HTML 里找第一条 /bk/数字 链接
-            first_id = re.search(r'/bk/(\d+)', resp.text)
-            if first_id:
-                aid = first_id.group(1)
-                detail_url = f"https://www.anibk.com/bk/{aid}"
-                ibytes, imethod = anibk_get_cover(detail_url, flog, strict_portrait=True)
-                if ibytes:
-                    return ibytes, f"anibk_search:{detail_url}"
+            img = Image.open(BytesIO(img_data))
+            if img.format == "WEBP":
+                buf = BytesIO()
+                img.convert("RGB").save(buf, "JPEG", quality=90)
+                img_data = buf.getvalue()
         except Exception:
             pass
 
-    except Exception:
-        pass
-    return None, None
+        return img_data, f"anibk:{detail_url}"
+
+    except Exception as e:
+        flog.add(f"anibk 搜索异常: {e}", "dim")
+        return None, None
+
+
+def _anibk_pick_best(candidates, user_title, tags, desc, deepseek_key, flog):
+    """用 DeepSeek 从多个 anibk 候选中挑出与用户标签/描述最匹配的。优先第一季。"""
+    try:
+        no_label = "无"
+        tag_str = " ".join(tags) if tags else no_label
+        desc_str = desc[:200] if desc else no_label
+        prompt = (
+            "\u4ee5\u4e0b\u662f\u5728 anibk.com \u641c\u7d22\u300c" + user_title + "\u300d\u5f97\u5230\u7684\u591a\u4e2a\u5019\u9009\u7ed3\u679c\u3002\n\n"
+            "\u7528\u6237\u8981\u67e5\u627e\u7684\u756a\u5267\u6807\u7b7e\uff1a" + tag_str + "\n"
+            "\u7528\u6237\u63cf\u8ff0\uff1a" + desc_str + "\n\n"
+            "\u5019\u9009\u5217\u8868\uff08\u5df2\u6309\u5b63\u6570\u6392\u5e8f\uff0c\u7b2c\u4e00\u5b63\u5728\u524d\uff09\uff1a\n"
+        )
+        for i, c in enumerate(candidates):
+            prompt += (
+                "\n[" + str(i + 1) + "] \u6807\u9898: " + c["title"]
+                + "\n    \u63cf\u8ff0: " + (c["desc"] or "")[:150] + "\n"
+            )
+
+        prompt += (
+            "\n\u8bf7\u6839\u636e\u7528\u6237\u8981\u67e5\u627e\u7684\u756a\u5267\u6807\u7b7e\u548c\u63cf\u8ff0\uff0c\u627e\u51fa\u6700\u5339\u914d\u7528\u6237\u539f\u59cb\u756a\u5267\u7684\u5019\u9009\u3002\n"
+            "**\u5982\u679c\u6709\u591a\u4e2a\u5b63\u5ea6\u7684\u7248\u672c\uff08\u7b2c\u4e00\u5b63/\u7b2c\u4e8c\u5b63/...\uff09\uff0c\u52a1\u5fc5\u9009\u62e9\u7b2c\u4e00\u5b63\u3002**\n"
+            "\u53ea\u9700\u8fd4\u56de\u4e00\u4e2a\u6570\u5b57\uff08\u5982 1\u30012\u30013\uff09\uff0c\u4e0d\u8981\u89e3\u91ca\u3002\n"
+            "\u5982\u679c\u90fd\u4e0d\u5339\u914d\uff0c\u8fd4\u56de 0\u3002"
+        )
+
+        data = json.dumps({
+            "model": "deepseek-chat",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0,
+            "max_tokens": 10,
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "https://api.deepseek.com/chat/completions",
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {deepseek_key}",
+            }
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            text = result["choices"][0]["message"]["content"].strip()
+            m = re.search(r"\d+", text)
+            if m:
+                idx = int(m.group()) - 1
+                if 0 <= idx < len(candidates):
+                    flog.add(
+                        "  DeepSeek \u2192 [" + str(idx + 1) + "] "
+                        + candidates[idx]["title"], "dim"
+                    )
+                    return candidates[idx]
+
+        flog.add("  DeepSeek \u65e0\u6cd5\u786e\u5b9a\uff0c\u7528\u7b2c1\u4e2a", "dim")
+        return candidates[0]
+    except Exception as e:
+        flog.add(f"  DeepSeek \u6bd4\u5bf9\u5f02\u5e38: {e}", "dim")
+        return candidates[0]
 
 
 import urllib.error
@@ -230,6 +374,53 @@ def parse_frontmatter(text):
         source = src_match.group(1).strip()
 
     return tags, source, body
+
+
+def update_md_source(md_path, new_source_url):
+    """
+    更新番剧 .md 文件中的 source 字段。
+    如果已有 source 行则替换，否则在 tags 块之后插入。
+    返回 True 表示文件被修改。
+    """
+    try:
+        text = Path(md_path).read_text(encoding="utf-8")
+    except Exception:
+        return False
+
+    new_line = f"source: {new_source_url}"
+    if re.search(r"^source:\s*.+$", text, re.MULTILINE):
+        # 已有 source 行 → 替换
+        new_text = re.sub(
+            r"^source:\s*.+$",
+            new_line,
+            text,
+            flags=re.MULTILINE
+        )
+    else:
+        # 没有 source 行 → 在 tags 块最后的 - xxx 行后插入
+        lines = text.split("\n")
+        insert_at = None
+        for i, line in enumerate(lines):
+            if re.match(r"^  - ", line):
+                insert_at = i  # 最后一个 tag
+        if insert_at is not None:
+            lines.insert(insert_at + 1, new_line)
+        else:
+            # 没有 tags 块，在 frontmatter 末尾（第一个 --- 后）插入
+            for i, line in enumerate(lines):
+                if line.strip() == "---" and i > 0:
+                    lines.insert(i, new_line)
+                    break
+        new_text = "\n".join(lines)
+
+    if new_text == text:
+        return False
+
+    try:
+        Path(md_path).write_text(new_text, encoding="utf-8")
+        return True
+    except Exception:
+        return False
 
 
 # ─────────────────────────────────────────────
@@ -620,23 +811,21 @@ def try_get_portrait_cover(wiki_title, lang, check_desc=True):
 # ── 日志辅助：fetch_cover 的详细输出 ──
 
 class FetchLog:
-    """收集 fetch_cover 过程中的日志行"""
+    """即时输出日志（不再累积，逐行打印）"""
     def __init__(self):
-        self.lines = []
+        pass
 
     def add(self, msg, color=None):
-        self.lines.append((msg, color))
+        if color:
+            log(f"  {msg}", color)
+        else:
+            log(f"  {msg}")
 
     def print(self):
-        for msg, color in self.lines:
-            if color:
-                log(f"  {msg}", color)
-            else:
-                log(f"  {msg}")
+        pass  # 已即时输出，无需额外打印
 
     def flush(self):
-        self.print()
-        self.lines.clear()
+        pass  # 已即时输出
 
 
 def wiki_search_candidates(query, lang="zh", limit=5, retries=2):
@@ -1008,10 +1197,6 @@ def baike_get_cover(page_url, flog):
     需要 cloudscraper 绕过反爬（百度百科封禁普通 HTTP 请求）。
     返回 (img_bytes, method_desc) 或 (None, None)。
     """
-    if not _HAS_CLOUDSCRAPER:
-        flog.add("  ⚠ cloudscraper 未安装，跳过百度百科", "yellow")
-        return None, None
-
     try:
         scraper = cloudscraper.create_scraper()
         resp = scraper.get(page_url, timeout=20)
@@ -1044,22 +1229,16 @@ def baike_get_cover(page_url, flog):
         return None, None
 
 
-def fetch_cover(anime, cache_dir, deepseek_key, force=False):
+def fetch_cover(anime, cache_dir, deepseek_key, force=False, anime_dir=None):
     """
     获取单个番剧封面图字节流。返回 (img_bytes, method, error_reason)。
 
-    策略优先级（DeepSeek 最后，避免浪费）：
-      1. 本地缓存（jpg 命中 → 秒过）
-      2. 萌娘百科 source URL → pageimages API
-      3. anibk.com source URL → 详情页提取封面
-      4. Wikipedia source URL → 三语言 REST API（source 不拦截漫画）
-      5. 多语言 Wikipedia 搜索（优先动画后缀）
-      6. 萌娘百科搜索兜底
-      7. anibk.com 标题搜索（/bk/ 页面遍历，兜底）
-      8. 百度百科兜底（source 或标题直搜）
-      9. 萌娘百科 source 降级兜底（放宽竖版）
-     10. Wikipedia source 漫画兜底
-     11. DeepSeek 推断词条名（最后手段）
+    策略优先级（anibk.com 最高，找到即止）：
+      1. 本地缓存（番名.jpg 命中 → 秒过）
+      2. anibk.com（source 直取 或 官网搜索 + DeepSeek 消歧选 S1）
+         → 找到即用，不尝试其他来源
+      3. 兜底：萌百 source → Wiki source → 多语言搜索
+         → 萌百搜索 → 百度百科 → DeepSeek Wiki 推断
     """
     title = anime["title"]
     source = anime.get("source")
@@ -1069,26 +1248,26 @@ def fetch_cover(anime, cache_dir, deepseek_key, force=False):
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    cache_key = hashlib.md5(title.encode("utf-8")).hexdigest()
-    cache_img = cache_dir / f"{cache_key}.jpg"
-    cache_meta = cache_dir / f"{cache_key}.meta"
+    # 用番名作为缓存文件名（清理非法字符）
+    safe_title = re.sub(r'[<>:"/\|?*]', '_', title).strip()
+    cache_img = cache_dir / f"{safe_title}.jpg"
+    cache_meta = cache_dir / f"{safe_title}.meta"
 
     flog = FetchLog()
 
-    # ── 缓存检查 ──
+    # ── 策略1：缓存检查 ──
     meta_skip_wiki = False
     if not force:
         if cache_img.exists() and cache_img.stat().st_size > 500:
             flog.add("\u2713 缓存命中（即时）", "green")
-            flog.print()
             return cache_img.read_bytes(), "cache", None
         if cache_meta.exists():
             meta = json.loads(cache_meta.read_text("utf-8"))
             status = meta.get("status", "")
             if status in ("not_found", "no_wikipedia"):
-                # Wikipedia 确认无条目/无封面 → 记录但继续尝试萌百
                 meta_skip_wiki = True
-                flog.add(f"\u26a0 缓存记录: Wikipedia {meta.get('error', '无条目')}", "yellow")
+                default_err = "无条目"
+                flog.add("\u26a0 缓存记录: Wikipedia " + meta.get("error", default_err), "yellow")
 
     if force:
         if cache_img.exists():
@@ -1113,24 +1292,48 @@ def fetch_cover(anime, cache_dir, deepseek_key, force=False):
             is_anibk_source = True
             anibk_url_from_source = source
 
-    # ── 策略1a：萌娘百科 source URL ──
-    if is_moegirl_source and moegirl_title_from_source:
-        flog.add(f"策略1: source URL → 萌百「{moegirl_title_from_source}」", "dim")
-        img_bytes, method = moegirl_pageimage_cover(moegirl_title_from_source)
-        if img_bytes:
-            flog.add(f"  → 萌百 ✓ 封面 ({method})", "green")
-
-    # ── 策略1b：anibk.com source URL ──
-    if not img_bytes and is_anibk_source and anibk_url_from_source:
-        flog.add(f"策略1b: source URL → anibk.com 详情页", "dim")
+    # ── 策略2：anibk.com（主策略，找到即止）──
+    if is_anibk_source and anibk_url_from_source:
+        flog.add(f"策略2: source URL → anibk.com 详情页", "dim")
         img_bytes, method = anibk_get_cover(anibk_url_from_source, flog)
         if img_bytes:
-            flog.add(f"  → anibk.com ✓ 封面", "green")
+            flog.add(f"  → anibk.com \u2713 封面", "green")
+    else:
+        flog.add(f"策略2: anibk.com 官网搜索 + DeepSeek 消歧", "dim")
+        img_bytes, method = anibk_search_by_title(title, tags, desc, deepseek_key, flog)
+        if img_bytes:
+            flog.add(f"  → anibk.com \u2713 封面", "green")
 
-    # ── 策略1c：Wikipedia source URL（source 直取不拦截，漫画暂存当兜底）──
-    source_manga_fallback = None   # source 指向漫画时的兜底图
+    # anibk 已找到 → 直接写入缓存并返回，不走后续兜底
+    if img_bytes and len(img_bytes) > 500:
+        cache_img.write_bytes(img_bytes)
+        if cache_meta.exists():
+            cache_meta.unlink()
+
+        # 如果 .md 文件没有 source 或 source 不是 anibk，自动补上
+        if method and method.startswith("anibk:") and anime_dir:
+            found_url = method[6:]  # 去掉 "anibk:" 前缀
+            if not source or "anibk.com/bk/" not in source:
+                md_path = Path(anime_dir) / f"{title}.md"
+                if update_md_source(md_path, found_url):
+                    flog.add(f"  \u2192 已自动补上 source: {found_url}", "dim")
+
+        flog.add(f"\u2713 成功！方法: {method}", "green")
+        return img_bytes, method, None
+
+    # ── 以下都是 anibk 失败后的兜底策略 ──
+
+    # ── 策略3：萌娘百科 source URL ──
+    if is_moegirl_source and moegirl_title_from_source:
+        flog.add(f"策略3: source URL \u2192 萌百\u300c{moegirl_title_from_source}\u300d", "dim")
+        img_bytes, method = moegirl_pageimage_cover(moegirl_title_from_source)
+        if img_bytes:
+            flog.add(f"  \u2192 萌百 \u2713 封面 ({method})", "green")
+
+    # ── 策略4：Wikipedia source URL ──
+    source_manga_fallback = None
     source_manga_method = None
-    if source and not is_moegirl_source and not meta_skip_wiki:
+    if source and not is_moegirl_source and not is_anibk_source and not meta_skip_wiki:
         wiki_title = extract_wiki_title_from_url(source)
         if wiki_title:
             src_lang = "zh"
@@ -1139,83 +1342,69 @@ def fetch_cover(anime, cache_dir, deepseek_key, force=False):
             elif "ja.wikipedia" in source:
                 src_lang = "ja"
 
-            flog.add(f"策略1: source URL \u2192 词条\u300c{wiki_title}\u300d({src_lang})", "dim")
+            flog.add(f"策略4: source URL \u2192 词条\u300c{wiki_title}\u300d({src_lang})", "dim")
             langs_to_try = [src_lang] + [l for l in ["zh", "ja", "en"] if l != src_lang]
             found = False
             for lang in langs_to_try:
                 time.sleep(0.2)
-                # check_desc=False: source 是用户指定的链接，不因漫画/小说描述而跳过
                 img_bytes, method, reason = try_get_portrait_cover(wiki_title, lang, check_desc=False)
                 if img_bytes:
-                    # 拿到封面后再看看页面是否指向漫画（仅作标记，不拦截）
                     pg_img_url, pg_desc, pg_extract = wiki_rest_cover(wiki_title, lang)
                     if is_manga_description(pg_desc, pg_extract):
                         snippet = (pg_extract or pg_desc or "")[:60]
                         flog.add(f"  \u2192 {lang} wiki \u2713 竖版封面，但页面指向漫画（\"{snippet}...\"）\u2192 暂存兜底", "yellow")
                         source_manga_fallback = img_bytes
                         source_manga_method = f"source_manga_{lang}({wiki_title})"
-                        img_bytes = None  # 不直接用，继续搜动画版
+                        img_bytes = None
                         continue
                     flog.add(f"  \u2192 {lang} wiki \u2713 竖版封面 ({method})", "green")
                     found = True
                     break
                 elif reason:
                     flog.add(f"  \u2192 {lang} wiki: {reason}", "dim")
-            if found:
-                pass  # 已拿到动画封面
             if not found:
                 flog.add(f"  \u2192 所有语言均无可用竖版封面", "yellow")
 
-    # ── 策略2：多语言搜索（优先动画后缀）──
+    # ── 策略5：多语言 Wikipedia 搜索 ──
     if not img_bytes and not meta_skip_wiki:
-        flog.add(f"策略2: 多语言 Wiki 搜索（优先动画后缀）", "dim")
+        flog.add(f"策略5: 多语言 Wiki 搜索（优先动画后缀）", "dim")
         img_bytes, method = search_cover_multilang(title, tags, desc, flog)
 
-
-
-    # ── 策略3：萌娘百科兜底搜索 ──
+    # ── 策略6：萌娘百科搜索兜底 ──
     if not img_bytes:
-        flog.add(f"策略3: 萌娘百科搜索...", "dim")
+        flog.add(f"策略6: 萌娘百科搜索...", "dim")
         img_bytes, method = moegirl_search_cover(title, flog)
 
-    # ── 策略4：anibk.com 标题搜索兜底 ──
-    if not img_bytes and _HAS_CLOUDSCRAPER:
-        flog.add(f"策略4: anibk.com 标题搜索...", "dim")
-        img_bytes, method = anibk_search_by_title(title, flog)
-        if img_bytes:
-            flog.add(f"  → anibk.com 搜索 ✓ 封面", "green")
-
-    # ── 策略6：Moegirl source 降级兜底（source 图非竖版但其他来源全部失败时，
-    #         回退用 source 图，避免取到无关词条）──
-    if not img_bytes and is_moegirl_source and moegirl_title_from_source:
-        flog.add(f"策略6: 回退萌百 source 图（放宽竖版限制）...", "dim")
-        img_bytes, method = moegirl_pageimage_cover(moegirl_title_from_source, strict_portrait=False)
-        if img_bytes:
-            flog.add(f"  → 萌百 source 降级兜底 ✓", "green")
-
-    # ── 策略7：Wikipedia source 漫画兜底（source 是漫画页，搜不到动画封面时用）──
-    if not img_bytes and source_manga_fallback:
-        flog.add(f"策略7: 回退 source 漫画封面（{title} 只在漫画词条有封面）...", "dim")
-        img_bytes = source_manga_fallback
-        method = source_manga_method
-        flog.add(f"  → source 漫画兜底 ✓", "green")
-
-    # ── 策略5：百度百科兜底（source 是百度百科 / 无 source 时尝试）──
+    # ── 策略7：百度百科 ──
     if not img_bytes:
         if source and "baike.baidu" in source:
             baike_url = source
-            flog.add(f"策略5: source URL → 百度百科...", "dim")
+            flog.add(f"策略7: source URL \u2192 百度百科...", "dim")
         else:
-            # 无 source 时用标题试搜百度百科
             encoded = urllib.parse.quote(title, safe="")
             baike_url = f"https://baike.baidu.com/item/{encoded}"
-            flog.add(f"策略5: 百度百科搜索（{baike_url}）...", "dim")
+            flog.add(f"策略7: 百度百科搜索（{baike_url}）...", "dim")
         img_bytes, method = baike_get_cover(baike_url, flog)
         if img_bytes:
-            flog.add(f"  → 百度百科 ✓ 封面", "green")
-    # ── 策略8：DeepSeek 推断（最后手段） ──
-    if not img_bytes and deepseek_key and not meta_skip_wiki and not (source and "baike.baidu" in source):
-        flog.add(f"策略8: DeepSeek 推断词条名...", "dim")
+            flog.add(f"  \u2192 百度百科 \u2713 封面", "green")
+
+    # ── 策略8：萌百 source 降级兜底 ──
+    if not img_bytes and is_moegirl_source and moegirl_title_from_source:
+        flog.add(f"策略8: 回退萌百 source 图（放宽竖版限制）...", "dim")
+        img_bytes, method = moegirl_pageimage_cover(moegirl_title_from_source, strict_portrait=False)
+        if img_bytes:
+            flog.add(f"  \u2192 萌百 source 降级兜底 \u2713", "green")
+
+    # ── 策略9：Wikipedia source 漫画兜底 ──
+    if not img_bytes and source_manga_fallback:
+        flog.add(f"策略9: 回退 source 漫画封面...", "dim")
+        img_bytes = source_manga_fallback
+        method = source_manga_method
+        flog.add(f"  \u2192 source 漫画兜底 \u2713", "green")
+
+    # ── 策略10：DeepSeek 推断 Wiki 词条名（最后手段）──
+    if not img_bytes and deepseek_key and not meta_skip_wiki:
+        flog.add(f"策略10: DeepSeek 推断 Wiki 词条名...", "dim")
         guessed_en, guessed_ja = deepseek_guess_wiki_title(title, tags, desc, deepseek_key, flog)
         for guessed, lang in [(guessed_en, "en"), (guessed_ja, "ja")]:
             if not guessed:
@@ -1229,46 +1418,42 @@ def fetch_cover(anime, cache_dir, deepseek_key, force=False):
             elif reason:
                 flog.add(f"  \u2192 {lang} wiki \u300c{guessed}\u300d: {reason}", "dim")
 
-
     # ── 写缓存 ──
     if img_bytes and len(img_bytes) > 500:
         cache_img.write_bytes(img_bytes)
         if cache_meta.exists():
             cache_meta.unlink()
         flog.add(f"\u2713 成功！方法: {method}", "green")
-        flog.print()
     elif method:
         error_reason = f"搜索到词条但无竖版封面（方法：{method}）"
         if method.startswith("source_"):
             wiki_title = extract_wiki_title_from_url(source) or "?"
-            error_reason = f"source 词条「{wiki_title}」在所有语言均无竖版封面"
+            error_reason = f"source 词条\u300c{wiki_title}\u300d在所有语言均无竖版封面"
         cache_meta.write_text(json.dumps({
             "status": "net_error",
             "method": method,
             "error": error_reason,
         }), "utf-8")
         flog.add(f"\u2717 失败：{error_reason}", "red")
-        flog.print()
     elif source:
         if is_moegirl_source:
-            error_reason = f"萌百词条「{moegirl_title_from_source or '?'}」无可用封面"
+            error_reason = f"萌百词条\u300c{moegirl_title_from_source or '?'}\u300d无可用封面"
         else:
             wiki_title = extract_wiki_title_from_url(source) or "?"
-            error_reason = f"source 词条「{wiki_title}」在所有语言维基均无封面"
+            error_reason = f"source 词条\u300c{wiki_title}\u300d在所有语言维基均无封面"
         cache_meta.write_text(json.dumps({
             "status": "net_error",
             "method": "all_failed",
             "error": error_reason,
         }), "utf-8")
         flog.add(f"\u2717 失败：{error_reason}", "red")
-        flog.print()
     else:
         prev_attempts = 0
         if cache_meta.exists():
             old_meta = json.loads(cache_meta.read_text("utf-8"))
             prev_attempts = old_meta.get("attempts", 0)
         suffix = "（已重试多次，可能维基无此条目）" if prev_attempts >= 2 else ""
-        error_reason = f"中/日/英维基均未搜到「{title}」{suffix}"
+        error_reason = f"中/日/英维基均未搜到\u300c{title}\u300d{suffix}"
         cache_meta.write_text(json.dumps({
             "status": "net_error",
             "method": "all_failed",
@@ -1276,12 +1461,9 @@ def fetch_cover(anime, cache_dir, deepseek_key, force=False):
             "attempts": prev_attempts + 1,
         }), "utf-8")
         flog.add(f"\u2717 失败：{error_reason}", "red")
-        flog.print()
 
     return img_bytes, method, error_reason
-
-
-def fetch_all_covers(grouped, cache_dir, deepseek_key, force=False):
+def fetch_all_covers(grouped, cache_dir, deepseek_key, force=False, anime_dir=None):
     """批量获取所有番剧封面，返回 {title: img_bytes_or_None}"""
     log(f"\n  开始获取封面图，缓存目录：{cache_dir}", "bold")
     log(f"  {'─' * 60}", "dim")
@@ -1327,7 +1509,7 @@ def fetch_all_covers(grouped, cache_dir, deepseek_key, force=False):
             log(f"    source: 无", "dim")
 
         # 获取封面（内部打印详细步骤）
-        img_bytes, method, error_reason = fetch_cover(anime, cache_dir, deepseek_key, force)
+        img_bytes, method, error_reason = fetch_cover(anime, cache_dir, deepseek_key, force, anime_dir)
         covers[title] = img_bytes
 
         if img_bytes:
@@ -1565,7 +1747,7 @@ def main():
     parser.add_argument("--cols", type=int, default=0, help="每行列数（0=自动）")
     parser.add_argument("--img-width", type=int, default=2400, help="图片总宽 px")
     parser.add_argument("--deepseek-key",
-                        default="sk-12b59a1c4acb4e54afde4d61a3203f63",
+                        default="sk-e9c4786a08d64ae6b8da81d3b10aeca6",
                         help="DeepSeek API key（已预置，可选覆盖）")
     parser.add_argument("--cache-dir", default=".tier_cache", help="封面缓存目录")
     parser.add_argument("--force", action="store_true", help="忽略缓存重新获取")
@@ -1634,7 +1816,7 @@ def main():
                 mf.unlink()
             log_ok(f"已清除 {len(meta_files)} 个旧 meta 缓存（将重新检查失败的番剧）")
 
-    covers = fetch_all_covers(grouped, cache_dir, args.deepseek_key, args.force)
+    covers = fetch_all_covers(grouped, cache_dir, args.deepseek_key, args.force, args.anime_dir)
 
     # 绘制大图
     log_step(4, 4, "绘制 Tier 大图")

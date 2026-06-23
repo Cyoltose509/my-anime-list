@@ -7,7 +7,7 @@ tags:
   - 观看状态-中道崩殂
   - 色情
   - 奇幻
-source: https://zh.wikipedia.org/wiki/Lv1%E9%AD%94%E7%8E%8B%E8%88%87%E7%8D%A8%E5%B1%85%E5%BB%A2%E5%8B%87%E8%80%85
+source: https://www.anibk.com/bk/889
 aliases:
   - 菜鸟魔王与独居勇者
   - Lv1魔王とワンルーム勇者

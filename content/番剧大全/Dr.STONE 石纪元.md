@@ -5,7 +5,7 @@ tags:
   - 奇幻
   - 日常
   - 评级-人上人
-source: https://zh.wikipedia.org/wiki/Dr.STONE_%E6%96%B0%E7%9F%B3%E7%B4%80
+source: https://www.anibk.com/bk/118
 ---
 我觉得有点奇幻要素在的。
 然后就是荒野求生，开局挺吸引人的，

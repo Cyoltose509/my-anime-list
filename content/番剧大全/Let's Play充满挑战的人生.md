@@ -4,7 +4,7 @@ tags:
   - 日常
   - 恋爱
   - 评级-NPC
-source: https://baike.baidu.com/item/Let's%20Play%20%E5%85%85%E6%BB%A1%E6%8C%91%E6%88%98%E7%9A%84%E4%BA%BA%E7%94%9F
+source: https://www.anibk.com/bk/12047
 ---
 我觉得一般般吧。给人上人已经是很高的评价了
 首先剧情就很不合理，女主家里有矿跑来叽里咕噜做独游首先我就没绷住

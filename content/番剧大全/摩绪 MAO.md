@@ -6,6 +6,7 @@ tags:
   - 奇幻
   - 战斗
   - 妖怪
+source: https://www.anibk.com/bk/12133
 ---
 画风很老，犬夜叉同个作者）看了几集没看下去
 但是OP很好听
