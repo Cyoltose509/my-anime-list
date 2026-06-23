@@ -1,10 +1,10 @@
 ---
 tags:
-  - 评级-顶级
   - 记忆程度-不记得了
   - 观看状态-中道崩殂
   - 奇幻
   - 日常
+  - 评级-人上人
 source: https://zh.wikipedia.org/wiki/Dr.STONE_%E6%96%B0%E7%9F%B3%E7%B4%80
 ---
 我觉得有点奇幻要素在的。
