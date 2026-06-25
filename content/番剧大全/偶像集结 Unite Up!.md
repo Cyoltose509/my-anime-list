@@ -5,6 +5,7 @@ tags:
   - 日常
   - 记忆程度-不记得了
   - 观看状态-中道崩殂
+  - 唱歌
 source: https://www.anibk.com/bk/6691
 aliases:
   - UniteUp! 众星齐聚

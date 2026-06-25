@@ -64,10 +64,4 @@ title: My Anime List
 - ![[老番]]
 - ![[电影]]
 ---
-
-
-
-
-
-
-
+![[preference_report_long.png]]
