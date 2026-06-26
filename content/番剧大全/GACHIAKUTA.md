@@ -4,7 +4,7 @@ tags:
   - 战斗
   - 血腥
   - 观看状态-中道崩殂
-source: https://zh.wikipedia.org/wiki/GACHIAKUTA
+source: https://www.anibk.com/bk/6969
 aliases:
   - 废渊战鬼
   - ガチアクタ

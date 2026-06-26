@@ -10,7 +10,7 @@ tags:
   - 战斗
 aliases:
   - SSSS.DYNAZENON
-source: https://zh.wikipedia.org/wiki/SSSS.DYNAZENON
+source: https://www.anibk.com/bk/316
 ---
 唯一一部列表里的机甲番omg！
 其实是因为男主太可爱了才去看的。

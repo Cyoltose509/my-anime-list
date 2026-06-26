@@ -6,6 +6,7 @@ tags:
   - 冒险
   - 战斗
   - 装逼
+source: https://www.anibk.com/bk/9230
 ---
 一般般的厕纸，感觉没有说很惊艳。也没有很垃圾
 退队流
