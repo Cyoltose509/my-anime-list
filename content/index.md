@@ -19,7 +19,7 @@ title: My Anime List
 - 如果这部番看的时间太久，我已经基本忘记的话，我会打上 #记忆程度-不记得了
 
 ---
-![[tier_chart.png]]
+![[tier_chart.jpg]]
 ---
 # 大全
 - ![[2026年4月]]
