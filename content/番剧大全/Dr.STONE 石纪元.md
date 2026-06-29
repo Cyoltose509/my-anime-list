@@ -8,7 +8,6 @@ tags:
   - 冒险
   - 战斗
   - 热血
-  - 励志
   - 评级-人上人
 source: https://www.anibk.com/bk/118
 ---

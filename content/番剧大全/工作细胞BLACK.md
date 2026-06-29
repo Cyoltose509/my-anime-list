@@ -5,7 +5,6 @@ tags:
   - 战斗
   - 奇幻
   - 科幻
-  - 猎奇
 source: https://www.anibk.com/bk/1821
 ---
 工作细胞黑化版，讲述的是一个病态人体内部的故事

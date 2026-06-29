@@ -8,7 +8,6 @@ tags:
   - 冒险
   - 奇幻
   - 热血
-  - 格斗
   - 评级-顶级
 source: https://www.anibk.com/bk/5945
 ---
