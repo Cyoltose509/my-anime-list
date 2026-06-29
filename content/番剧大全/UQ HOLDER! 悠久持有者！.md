@@ -4,6 +4,8 @@ tags:
   - 观看状态-看完
   - 评级-NPC
   - 奇幻
+  - 后宫
+  - 战斗
 source: https://www.anibk.com/bk/3074
 ---
 我真的看了这部番吗？

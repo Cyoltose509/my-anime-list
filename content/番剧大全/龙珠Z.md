@@ -6,6 +6,8 @@ tags:
   - 战斗
   - 装逼
   - 冒险
+  - 热血
+  - 格斗
   - 评级-人上人
 source: https://www.anibk.com/bk/5919
 ---

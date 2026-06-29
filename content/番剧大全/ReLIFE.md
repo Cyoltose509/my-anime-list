@@ -4,6 +4,7 @@ tags:
   - 恋爱
   - 催泪
   - 奇幻
+  - 青春
   - 观看状态-看完
   - 评级-夯
 source: https://www.anibk.com/bk/2930

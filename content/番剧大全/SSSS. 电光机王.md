@@ -8,8 +8,8 @@ tags:
   - 恋爱
   - 冒险
   - 战斗
-aliases:
-  - SSSS.DYNAZENON
+  - 科幻
+  - 机战
 source: https://www.anibk.com/bk/316
 ---
 唯一一部列表里的机甲番omg！

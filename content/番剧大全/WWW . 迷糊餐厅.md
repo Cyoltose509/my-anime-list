@@ -2,6 +2,8 @@
 tags:
   - 搞笑
   - 恋爱
+  - 职场
+  - 日常
   - 观看状态-看完
   - 评级-夯
 source: https://www.anibk.com/bk/3402
