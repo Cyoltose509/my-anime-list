@@ -9,6 +9,7 @@ tags:
   - 冒险
   - 战斗
   - 科幻
+date: 2021-04-02
 source: https://www.anibk.com/bk/316
 ---
 唯一一部列表里的机甲番omg！

@@ -6,6 +6,7 @@ tags:
   - 智斗
   - 观看状态-看完
   - 评级-夯
+date: 2024-12-31
 source: https://www.anibk.com/bk/4329
 ---
 也是再次看上fate了好吧，这次真的神仙打架。

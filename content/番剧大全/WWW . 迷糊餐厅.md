@@ -6,6 +6,7 @@ tags:
   - 日常
   - 观看状态-看完
   - 评级-夯
+date: 2016-10-01
 source: https://www.anibk.com/bk/3402
 ---
 二刷。

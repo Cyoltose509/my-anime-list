@@ -4,6 +4,7 @@ tags:
   - 日常
   - 恋爱
   - 评级-NPC
+date: 2025-10-01
 source: https://www.anibk.com/bk/12047
 ---
 我觉得一般般吧。给人上人已经是很高的评价了

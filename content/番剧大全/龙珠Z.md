@@ -8,6 +8,7 @@ tags:
   - 冒险
   - 热血
   - 评级-人上人
+date: 1989-04-26
 source: https://www.anibk.com/bk/5919
 ---
 你敢信是我爸带我入坑的。

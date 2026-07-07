@@ -9,6 +9,7 @@ tags:
   - 战斗
   - 热血
   - 评级-人上人
+date: 2019-07-05
 source: https://www.anibk.com/bk/118
 ---
 我觉得有点奇幻要素在的。

@@ -8,6 +8,7 @@ tags:
   - 妖怪
   - 悬疑
   - 历史
+date: 2026-04-04
 source: https://www.anibk.com/bk/12133
 ---
 画风很老，犬夜叉同个作者）看了几集没看下去

@@ -9,6 +9,7 @@ tags:
   - 奇幻
   - 搞笑
   - 日常
+date: 2023-07-03
 source: https://www.anibk.com/bk/889
 ---
 勇者颓废了然后魔王来找事做，其实二者都很弱小，对
